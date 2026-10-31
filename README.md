@@ -3,7 +3,7 @@
 A Persian, mobile-friendly private dashboard for monitoring RSS feeds and publicly viewable Telegram channel pages using keywords and an Excel source list.
 
 ## Deploy on Render
-- Root Directory: `VT-News-Map` (this project lives in a subfolder of the Robot-VT repository).
+- Root Directory: leave blank (the app files are at the repository root).
 - Build Command: `pip install -r requirements.txt`
 - Start Command: `gunicorn app:app`
 - Environment variables (set privately in Render; never commit secrets):
