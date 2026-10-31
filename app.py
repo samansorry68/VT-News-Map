@@ -128,6 +128,29 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
+@app.route("/search", methods=["POST"])
+def search_saved_sources():
+    if not logged_in(): return redirect(url_for("login"))
+    saved = SOURCES.get(session.get("sid", ""), [])
+    if not saved:
+        flash("هنوز فهرست منابعی برای این نشست ثبت نشده؛ اکسل را یک‌بار بارگذاری کن.")
+        return redirect(url_for("home"))
+    keywords = request.form.get("keywords", "")
+    df = pd.DataFrame([{
+        "استان": s["province"], "شهرستان": s["county"],
+        "عرض": s["lat"], "طول": s["lon"],
+        "rss_url": s.get("rss_url", ""), "telegram_url": s.get("telegram_url", "")
+    } for s in saved])
+    try:
+        results = collect(df, keywords)
+        RESULTS[session["sid"]] = results
+        session["keywords"] = keywords
+        flash(f"جستجو تمام شد: {len(results)} خبر پیدا شد. فهرست اکسل بدون بارگذاری مجدد استفاده شد.")
+    except Exception as e:
+        flash("خطا در بررسی منابع ذخیره‌شده: " + str(e))
+    return redirect(url_for("home"))
+
 @app.route("/template")
 def template_file():
     df = pd.DataFrame([{"استان":"تهران","شهرستان":"تهران","عرض":35.6892,"طول":51.3890,
