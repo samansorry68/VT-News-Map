@@ -18,6 +18,7 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 # Keep collected news on the server, not in the browser cookie session.
 RESULTS = {}
+SOURCES = {}
 
 REQUIRED = ["استان", "شهرستان", "عرض", "طول"]
 OPTIONAL = ["rss_url", "telegram_url"]
@@ -39,6 +40,12 @@ def load_sources(file):
         raise ValueError("ستون‌های ضروری اکسل موجود نیست: " + "، ".join(missing))
     for c in OPTIONAL:
         if c not in df.columns: df[c] = ""
+    df["عرض"] = pd.to_numeric(df["عرض"], errors="coerce")
+    df["طول"] = pd.to_numeric(df["طول"], errors="coerce")
+    df = df.dropna(subset=["عرض", "طول"])
+    df = df[(df["عرض"].between(24, 40)) & (df["طول"].between(44, 64))]
+    if df.empty:
+        raise ValueError("هیچ ردیفی با مختصات معتبر ایران پیدا نشد. عرض و طول را بررسی کن.")
     return df
 
 def fetch_rss(url, source):
@@ -101,8 +108,9 @@ def collect(df, keywords):
 @app.route("/", methods=["GET"])
 def home():
     if not logged_in(): return redirect(url_for("login"))
-    return render_template("index.html", results=RESULTS.get(session.get("sid", ""), []), keywords=session.get("keywords", ""),
-                           username=session.get("username", ADMIN_USER))
+    return render_template("index.html", results=RESULTS.get(session.get("sid", ""), []),
+                           sources=SOURCES.get(session.get("sid", ""), []),
+                           keywords=session.get("keywords", ""), username=session.get("username", ADMIN_USER))
 
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -140,10 +148,17 @@ def scan():
         return redirect(url_for("home"))
     try:
         df = load_sources(file)
+        sources = []
+        for _, row in df.iterrows():
+            sources.append({"province": clean(row["استان"]), "county": clean(row["شهرستان"]),
+                            "lat": float(row["عرض"]), "lon": float(row["طول"]),
+                            "rss_url": clean(row.get("rss_url", "")),
+                            "telegram_url": clean(row.get("telegram_url", ""))})
         results = collect(df, keywords)
+        SOURCES[session["sid"]] = sources
         RESULTS[session["sid"]] = results
         session["keywords"] = keywords
-        flash(f"بررسی تمام شد؛ {len(results)} مورد مطابق کلمات کلیدی پیدا شد.")
+        flash(f"اکسل با موفقیت خوانده شد: {len(sources)} شهرستان/منبع ثبت شد؛ {len(results)} خبر مطابق کلمات کلیدی پیدا شد.")
     except Exception as e:
         flash("خطا در خواندن اکسل: " + str(e))
     return redirect(url_for("home"))
