@@ -21,5 +21,6 @@ items.forEach(n=>{if(Number.isFinite(n.lat)&&Number.isFinite(n.lon)){L.circleMar
 if(bounds.length){map.fitBounds(bounds,{padding:[25,25],maxZoom:7});}
 
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-const provinceCounts={};items.forEach(n=>{provinceCounts[n.province]=(provinceCounts[n.province]||0)+1;});if(window.Chart){new Chart(document.getElementById('provinceChart'),{type:'bar',data:{labels:Object.keys(provinceCounts),datasets:[{label:'تعداد خبر',data:Object.values(provinceCounts)}]},options:{responsive:true,plugins:{legend:{display:false}}}});}\nfunction copyAll(){const t=items.map(n=>n.title+'\n'+n.province+' / '+n.county+'\n'+n.source+' | '+n.date+'\n'+n.text+'\n'+n.url).join('\n\n---\n\n');navigator.clipboard.writeText(t).then(()=>alert('کپی شد')).catch(()=>alert('کپی خودکار در این مرورگر در دسترس نیست'));}
+const provinceCounts={};items.forEach(n=>{provinceCounts[n.province]=(provinceCounts[n.province]||0)+1;});if(window.Chart){new Chart(document.getElementById('provinceChart'),{type:'bar',data:{labels:Object.keys(provinceCounts),datasets:[{label:'تعداد خبر',data:Object.values(provinceCounts)}]},options:{responsive:true,plugins:{legend:{display:false}}}});}
+function copyAll(){const t=items.map(n=>n.title+'\n'+n.province+' / '+n.county+'\n'+n.source+' | '+n.date+'\n'+n.text+'\n'+n.url).join('\n\n---\n\n');navigator.clipboard.writeText(t).then(()=>alert('کپی شد')).catch(()=>alert('کپی خودکار در این مرورگر در دسترس نیست'));}
 </script></body></html>
