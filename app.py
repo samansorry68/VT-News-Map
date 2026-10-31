@@ -9,7 +9,7 @@ import feedparser
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, render_template, request, redirect, url_for, session, send_file, flash
+from flask import Flask, render_template, request, redirect, url_for, session, send_file, flash, jsonify
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("APP_SECRET", secrets.token_hex(32))
@@ -131,25 +131,52 @@ def logout():
 
 @app.route("/search", methods=["POST"])
 def search_saved_sources():
-    if not logged_in(): return redirect(url_for("login"))
-    saved = SOURCES.get(session.get("sid", ""), [])
-    if not saved:
-        flash("هنوز فهرست منابعی برای این نشست ثبت نشده؛ اکسل را یک‌بار بارگذاری کن.")
-        return redirect(url_for("home"))
-    keywords = request.form.get("keywords", "")
-    df = pd.DataFrame([{
-        "استان": s["province"], "شهرستان": s["county"],
-        "عرض": s["lat"], "طول": s["lon"],
-        "rss_url": s.get("rss_url", ""), "telegram_url": s.get("telegram_url", "")
-    } for s in saved])
-    try:
-        results = collect(df, keywords)
-        RESULTS[session["sid"]] = results
-        session["keywords"] = keywords
-        flash(f"جستجو تمام شد: {len(results)} خبر پیدا شد. فهرست اکسل بدون بارگذاری مجدد استفاده شد.")
-    except Exception as e:
-        flash("خطا در بررسی منابع ذخیره‌شده: " + str(e))
-    return redirect(url_for("home"))
+    if not logged_in():
+        return jsonify({"ok": False, "error": "ابتدا وارد سامانه شو."}), 401
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("sources", [])
+    keywords = str(payload.get("keywords", ""))
+    if not isinstance(rows, list) or not rows:
+        return jsonify({"ok": False, "error": "فهرست منابع در مرورگر پیدا نشد؛ اکسل را دوباره انتخاب کن."}), 400
+    clean_rows = []
+    for item in rows[:2000]:
+        try:
+            lat, lon = float(item.get("عرض", item.get("lat"))), float(item.get("طول", item.get("lon")))
+            if not (24 <= lat <= 40 and 44 <= lon <= 64): continue
+            clean_rows.append({
+                "استان": str(item.get("استان", item.get("province", ""))).strip(),
+                "شهرستان": str(item.get("شهرستان", item.get("county", ""))).strip(),
+                "عرض": lat, "طول": lon,
+                "rss_url": str(item.get("rss_url", "")).strip(),
+                "telegram_url": str(item.get("telegram_url", "")).strip()
+            })
+        except Exception:
+            continue
+    if not clean_rows:
+        return jsonify({"ok": False, "error": "مختصات معتبر در فایل پیدا نشد."}), 400
+    found = []
+    statuses = []
+    keys = [k.strip() for k in keywords.splitlines() if k.strip()]
+    for src in clean_rows:
+        for field, kind in (("rss_url", "RSS"), ("telegram_url", "تلگرام")):
+            url = src[field]
+            if not url: continue
+            if not url.startswith(("http://", "https://")):
+                statuses.append({"place": src["شهرستان"], "kind": kind, "url": url, "message": "نشانی معتبر نیست", "count": 0})
+                continue
+            try:
+                if kind == "RSS":
+                    raw = fetch_rss(url, src)
+                else:
+                    raw = fetch_telegram(url, src)
+                matches = [n for n in raw if not keys or any(k.casefold() in (n["title"]+" "+n["text"]).casefold() for k in keys)]
+                found.extend(matches)
+                message = ("دریافت شد" if raw else "محتوایی دریافت نشد؛ نشانی یا دسترسی منبع را بررسی کن")
+                statuses.append({"place": src["شهرستان"], "kind": kind, "url": url, "message": message, "count": len(matches)})
+            except Exception as exc:
+                statuses.append({"place": src["شهرستان"], "kind": kind, "url": url, "message": "خطا: " + str(exc)[:160], "count": 0})
+    session["keywords"] = keywords
+    return jsonify({"ok": True, "results": found, "statuses": statuses, "source_count": len(clean_rows)})
 
 @app.route("/template")
 def template_file():
