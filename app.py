@@ -51,10 +51,11 @@ def load_sources(file):
         if c not in df.columns: df[c] = ""
     df["عرض"] = pd.to_numeric(df["عرض"], errors="coerce")
     df["طول"] = pd.to_numeric(df["طول"], errors="coerce")
-    df = df.dropna(subset=["عرض", "طول"])
-    df = df[(df["عرض"].between(24, 40)) & (df["طول"].between(44, 64))]
+    has_source = df["rss_url"].astype(str).str.startswith(("http://", "https://")) | df["telegram_url"].astype(str).str.startswith(("http://", "https://"))
+    valid_coords = df["عرض"].between(24, 40) & df["طول"].between(44, 64)
+    df = df[valid_coords | has_source].copy()
     if df.empty:
-        raise ValueError("هیچ ردیفی با مختصات معتبر ایران پیدا نشد. عرض و طول را بررسی کن.")
+        raise ValueError("هیچ لینک RSS/تلگرام معتبر یا مختصات معتبر پیدا نشد. ستون‌های لینک را بررسی کن.")
     return df
 
 def fetch_webpage(url, source):
@@ -145,7 +146,7 @@ def collect(df, keywords):
         try:
             src["عرض"], src["طول"] = float(row["عرض"]), float(row["طول"])
         except Exception:
-            continue
+            src["عرض"], src["طول"] = 32.4, 53.7
         if src["rss_url"]: results.extend(fetch_rss(src["rss_url"], src))
         if src["telegram_url"]: results.extend(fetch_telegram(src["telegram_url"], src))
     keys = [k.strip() for k in keywords.splitlines() if k.strip()]
@@ -189,14 +190,23 @@ def search_saved_sources():
     clean_rows = []
     for item in rows[:2000]:
         try:
-            lat, lon = float(item.get("عرض", item.get("lat"))), float(item.get("طول", item.get("lon")))
-            if not (24 <= lat <= 40 and 44 <= lon <= 64): continue
+            raw_lat, raw_lon = item.get("عرض", item.get("lat")), item.get("طول", item.get("lon"))
+            try:
+                lat, lon = float(raw_lat), float(raw_lon)
+                if not (24 <= lat <= 40 and 44 <= lon <= 64):
+                    lat, lon = None, None
+            except Exception:
+                lat, lon = None, None
+            rss = str(item.get("rss_url", "")).strip()
+            telegram = str(item.get("telegram_url", "")).strip()
+            if lat is None and lon is None and not (rss.startswith(("http://", "https://")) or telegram.startswith(("http://", "https://"))):
+                continue
             clean_rows.append({
                 "استان": str(item.get("استان", item.get("province", ""))).strip(),
                 "شهرستان": str(item.get("شهرستان", item.get("county", ""))).strip(),
-                "عرض": lat, "طول": lon,
-                "rss_url": str(item.get("rss_url", "")).strip(),
-                "telegram_url": str(item.get("telegram_url", "")).strip()
+                "عرض": lat if lat is not None else 32.4, "طول": lon if lon is not None else 53.7,
+                "rss_url": rss,
+                "telegram_url": telegram
             })
         except Exception:
             continue
