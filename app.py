@@ -144,7 +144,10 @@ def collect(df, keywords):
     for _, row in df.iterrows():
         src = {k: clean(row.get(k, "")) for k in ["استان","شهرستان","rss_url","telegram_url"]}
         try:
-            src["عرض"], src["طول"] = float(row["عرض"]), float(row["طول"])
+            lat, lon = float(row["عرض"]), float(row["طول"])
+            if not (24 <= lat <= 40 and 44 <= lon <= 64):
+                raise ValueError("missing coordinates")
+            src["عرض"], src["طول"] = lat, lon
         except Exception:
             src["عرض"], src["طول"] = 32.4, 53.7
         if src["rss_url"]: results.extend(fetch_rss(src["rss_url"], src))
