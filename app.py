@@ -16,6 +16,15 @@ app.secret_key = os.environ.get("APP_SECRET", secrets.token_hex(32))
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+
+@app.after_request
+def prevent_stale_mobile_pages(response):
+    # Avoid Android browsers reusing an older page with the obsolete Excel form.
+    if request.path == "/" or request.path in ("/login", "/search"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 # Keep collected news on the server, not in the browser cookie session.
 RESULTS = {}
 SOURCES = {}
@@ -48,10 +57,48 @@ def load_sources(file):
         raise ValueError("هیچ ردیفی با مختصات معتبر ایران پیدا نشد. عرض و طول را بررسی کن.")
     return df
 
+def fetch_webpage(url, source):
+    """Best-effort extraction from a public HTML article page (not a full site crawler)."""
+    try:
+        res = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (compatible; VTNewsMap/1.0)"})
+        res.raise_for_status()
+        if "html" not in res.headers.get("Content-Type", "").lower():
+            return []
+        soup = BeautifulSoup(res.text, "html.parser")
+        for node in soup(["script", "style", "noscript", "svg", "nav", "footer", "header"]):
+            node.decompose()
+        title_node = soup.select_one('meta[property="og:title"]') or soup.select_one("title")
+        title = clean(title_node.get("content", "") if title_node and title_node.name == "meta" else title_node.get_text(" ", strip=True) if title_node else "")
+        desc_node = soup.select_one('meta[name="description"]') or soup.select_one('meta[property="og:description"]')
+        summary = clean(desc_node.get("content", "")) if desc_node else ""
+        article = soup.find("article") or soup.find("main") or soup.body or soup
+        paragraphs = [p.get_text(" ", strip=True) for p in article.find_all(["p", "h1", "h2"]) if p.get_text(" ", strip=True)]
+        body = " ".join(paragraphs) or summary
+        if not title and not body:
+            return []
+        time_node = soup.find("time")
+        published = time_node.get("datetime", "") if time_node else ""
+        canonical = soup.find("link", rel="canonical")
+        final_url = canonical.get("href") if canonical and canonical.get("href") else res.url
+        return [{
+            "title": title or body[:120], "text": body[:5000], "url": final_url,
+            "date": published, "province": source["استان"], "county": source["شهرستان"],
+            "lat": float(source["عرض"]), "lon": float(source["طول"]),
+            "source": urlparse(url).netloc, "kind": "وب‌سایت", "location_quality": "مرکز شهرستان/استان"
+        }]
+    except Exception:
+        return []
+
 def fetch_rss(url, source):
     items = []
-    if not url.startswith(("http://", "https://")): return items
-    feed = feedparser.parse(url)
+    if not url.startswith(("http://", "https://")):
+        return items
+    try:
+        response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (compatible; VTNewsMap/1.0)"})
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
+    except Exception:
+        return fetch_webpage(url, source)
     for entry in feed.entries[:100]:
         title = clean(entry.get("title", ""))
         summary = BeautifulSoup(clean(entry.get("summary", entry.get("description", ""))), "html.parser").get_text(" ", strip=True)
@@ -61,7 +108,8 @@ def fetch_rss(url, source):
                       "province": source["استان"], "county": source["شهرستان"],
                       "lat": float(source["عرض"]), "lon": float(source["طول"]),
                       "source": urlparse(url).netloc, "kind": "RSS", "location_quality": "مرکز شهرستان/استان"})
-    return items
+    # Some users paste a public article URL instead of an RSS feed URL.
+    return items if items else fetch_webpage(url, source)
 
 def fetch_telegram(url, source):
     # Reads only publicly viewable t.me/s/<channel> pages. Telegram may block or limit requests.
