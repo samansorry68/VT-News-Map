@@ -169,7 +169,7 @@ def login():
     if request.method == "POST":
         if not ADMIN_PASSWORD:
             flash("مدیر سامانه هنوز ADMIN_PASSWORD را در تنظیمات هاست تعیین نکرده است.")
-        elif request.form.get("username","") == ADMIN_USER and secrets.compare_digest(request.form.get("password",""), ADMIN_PASSWORD):
+        elif request.form.get("username","") == ADMIN_USER and secrets.compare_digest(request.form.get("password","").encode("utf-8"), ADMIN_PASSWORD.encode("utf-8")):
             session.clear(); session["logged_in"] = True; session["username"] = ADMIN_USER; session["sid"] = secrets.token_urlsafe(18)
             return redirect(url_for("home"))
         else: flash("نام کاربری یا رمز عبور اشتباه است.")
