@@ -48,9 +48,11 @@ $('saveExcel').addEventListener('click',async()=>{
  try{
   const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
   const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
-  const norm=k=>String(k).trim().toLowerCase().replace(/[\s_-]/g,'');
+  const norm=k=>String(k).trim().toLowerCase().replace(/[\\s_()\\-]/g,'');
   const aliases={'province':'استان','استان':'استان','county':'شهرستان','city':'شهرستان','شهرستان':'شهرستان','latitude':'عرض','lat':'عرض','عرض':'عرض','عرضجغرافیایی':'عرض','longitude':'طول','lon':'طول','lng':'طول','طول':'طول','طولجغرافیایی':'طول','rss':'rss_url','rssurl':'rss_url','feed':'rss_url','telegram':'telegram_url','telegramurl':'telegram_url'};
-  sources=raw.map(row=>{const o={};Object.keys(row).forEach(k=>o[aliases[norm(k)]||String(k).trim()]=row[k]);const lat=Number(o['عرض']),lon=Number(o['طول']);const validCoords=Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=24&&lat<=40&&lon>=44&&lon<=64;const rss=String(o.rss_url||'').trim(),telegram=String(o.telegram_url||'').trim();return {'استان':String(o['استان']||''),'شهرستان':String(o['شهرستان']||''),'عرض':validCoords?lat:null,'طول':validCoords?lon:null,'rss_url':rss,'telegram_url':telegram};}).filter(s=>s['عرض']!==null||isUrl(s.rss_url)||isUrl(s.telegram_url));
+  const latinDigits=v=>String(v??'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[٫،٬]/g,'.').replace(/,/g,'').trim();
+  const num=v=>{const n=Number(latinDigits(v));return Number.isFinite(n)?n:null;};
+  sources=raw.map(row=>{const o={};Object.keys(row).forEach(k=>{const key=norm(k);o[aliases[key]||String(k).trim()]=row[k];});const lat=num(o['عرض']),lon=num(o['طول']);const validCoords=lat!==null&&lon!==null&&lat>=24&&lat<=40&&lon>=44&&lon<=64;const rss=String(o.rss_url||'').trim(),telegram=String(o.telegram_url||'').trim();return {'استان':String(o['استان']||''),'شهرستان':String(o['شهرستان']||''),'عرض':validCoords?lat:null,'طول':validCoords?lon:null,'rss_url':rss,'telegram_url':telegram};}).filter(s=>s['عرض']!==null||isUrl(s.rss_url)||isUrl(s.telegram_url));
   if(!sources.length)throw new Error('هیچ لینک معتبر یا مختصات معتبری در فایل پیدا نشد. ستون‌های اکسل را بررسی کن.');
   localStorage.setItem(STORE,JSON.stringify(sources));showSaved();
   showStatus('اکسل با موفقیت ذخیره شد: '+sources.length+' ردیف. برای جستجو دیگر لازم نیست دوباره فایل را انتخاب کنی.','success');
