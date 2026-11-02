@@ -14,22 +14,71 @@
 <div class="card shadow-sm"><div class="card-body"><h5>۴) خبرها</h5><button class="btn btn-outline-primary btn-sm mb-2" id="copyBtn">کپی همه خبرها</button><div id="news">هنوز جستجویی انجام نشده است.</div></div></div></main>
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const STORE='vt_news_map_sources_v1',RESULTS_STORE='vt_news_map_results_v1';let sources=[],results=[],map=null,markers=[];
-function showSaved(){try{sources=JSON.parse(localStorage.getItem(STORE)||'[]');results=JSON.parse(localStorage.getItem(RESULTS_STORE)||'[]')}catch(e){sources=[];results=[]}document.getElementById('sourceCount').textContent=sources.length;document.getElementById('newsCount').textContent=results.length;document.getElementById('savedInfo').textContent=sources.length?'فهرست '+sources.length+' ردیف روی این گوشی ذخیره است.':'فهرست هنوز ذخیره نشده است.';if(results.length)renderNews();drawMap();}
-function renderNews(){document.getElementById('newsCount').textContent=results.length;document.getElementById('news').innerHTML=results.length?results.map(n=>'<article class="news"><strong>'+esc(n.title)+'</strong><div class="muted">'+esc(n.province)+' / '+esc(n.county)+' · '+esc(n.source)+' · '+esc(n.date)+'</div><p>'+esc(n.text)+'</p><a href="'+esc(n.url)+'" target="_blank" rel="noopener">باز کردن خبر اصلی</a></article>').join(''):'هنوز خبری ذخیره نشده است.';}
-function drawMap(){if(!map||!window.L)return;markers.forEach(m=>map.removeLayer(m));markers=[];const bounds=[];sources.forEach(s=>{if(s.عرض===null||s.طول===null||s.عرض===''||s.طول==='')return;let lat=Number(s.عرض),lon=Number(s.طول);if(Number.isFinite(lat)&&Number.isFinite(lon)){let m=L.circleMarker([lat,lon],{radius:6,color:'#1769aa'}).addTo(map).bindPopup((s.استان||'')+' / '+(s.شهرستان||''));markers.push(m);bounds.push([lat,lon]);}});results.forEach(n=>{let lat=Number(n.lat),lon=Number(n.lon);if(Number.isFinite(lat)&&Number.isFinite(lon)){let m=L.circleMarker([lat,lon],{radius:8,color:'#b21f2d',fillColor:'#e53935',fillOpacity:.9}).addTo(map).bindPopup('<b>'+esc(n.title)+'</b><br>'+esc(n.province)+' / '+esc(n.county));markers.push(m);bounds.push([lat,lon]);}});if(bounds.length)map.fitBounds(bounds,{padding:[20,20],maxZoom:7});}
-function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-document.getElementById('saveExcel').onclick=async()=>{const f=document.getElementById('excel').files[0];if(!f){alert('ابتدا فایل اکسل را انتخاب کن.');return;}if(!window.XLSX){alert('کتابخانه خواندن اکسل بارگذاری نشد؛ اینترنت گوشی را بررسی کن.');return;}try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const norm=k=>String(k).trim().toLowerCase().replace(/[\\s_\\-]/g,'');const alias={'province':'استان','استان':'استان','county':'شهرستان','city':'شهرستان','شهرستان':'شهرستان','latitude':'عرض','lat':'عرض','عرض':'عرض','عرضجغرافیایی':'عرض','longitude':'طول','lon':'طول','lng':'طول','طول':'طول','طولجغرافیایی':'طول','rss':'rss_url','rssurl':'rss_url','feed':'rss_url','telegram':'telegram_url','telegramurl':'telegram_url'};sources=raw.map(r=>{const o={};Object.keys(r).forEach(k=>o[alias[norm(k)]||String(k).trim()]=r[k]);const lat=Number(o['عرض']),lon=Number(o['طول']),rss=String(o.rss_url||'').trim(),telegram=String(o.telegram_url||'').trim();const validCoords=Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=24&&lat<=40&&lon>=44&&lon<=64;const validLink=/^https?:\\/\\//i.test(rss)||/^https?:\\/\\//i.test(telegram);return {'استان':String(o['استان']||''),'شهرستان':String(o['شهرستان']||''),'عرض':validCoords?lat:null,'طول':validCoords?lon:null,'rss_url':rss,'telegram_url':telegram,'approximate':!validCoords};}).filter(s=>s['عرض']!==null||/^https?:\\/\\//i.test(s.rss_url)||/^https?:\\/\\//i.test(s.telegram_url));if(!sources.length)throw new Error('هیچ لینک معتبر RSS/تلگرام یا مختصات معتبر پیدا نشد. نام ستون‌ها و لینک‌ها را بررسی کن.');localStorage.setItem(STORE,JSON.stringify(sources));showSaved();document.getElementById('status').innerHTML='<div class="alert alert-success">اکسل روی گوشی ذخیره شد. از این پس برای جستجو نیازی به انتخاب دوباره اکسل نیست.</div>';}catch(e){alert('خطا در خواندن اکسل: '+e.message);}};
-document.getElementById('searchBtn').onclick=async()=>{if(!sources.length){showSaved();if(!sources.length){alert('اول اکسل را انتخاب و ذخیره کن.');return;}}const btn=document.getElementById('searchBtn');btn.disabled=true;btn.textContent='در حال بررسی لینک‌ها...';document.getElementById('status').textContent='در حال دریافت اطلاعات از منابع؛ ممکن است کمی طول بکشد.';try{const r=await fetch('/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources,keywords:document.getElementById('keywords').value})});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.error||'خطا در جستجو');results=data.results||[];localStorage.setItem(RESULTS_STORE,JSON.stringify(results));document.getElementById('newsCount').textContent=results.length;renderNews();document.getElementById('sourceStatus').innerHTML=(data.statuses||[]).map(s=>'<div class="border-bottom py-2"><b>'+esc(s.place)+' · '+esc(s.kind)+'</b> — '+esc(s.message)+' (خبر مطابق کلیدواژه: '+s.count+')<br><small>'+esc(s.url)+'</small></div>').join('')||'در اکسل هیچ لینک RSS یا تلگرام ثبت نشده است.';document.getElementById('status').innerHTML='<div class="alert alert-info">بررسی '+data.source_count+' ردیف تمام شد؛ '+results.length+' خبر مطابق کلیدواژه پیدا شد.</div>';drawMap();}catch(e){document.getElementById('status').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>';}finally{btn.disabled=false;btn.textContent='جستجو در منابع ذخیره‌شده';}};
-document.getElementById('copyBtn').onclick=()=>{const t=results.map(n=>n.title+'\n'+n.province+' / '+n.county+'\n'+n.text+'\n'+n.url).join('\n\n---\n\n');if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>alert('کپی شد'));else alert('کپی در این مرورگر پشتیبانی نمی‌شود.');};
-if(window.L){
- map=L.map('map').setView([32.4,53.7],5);
- L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:18}).addTo(map);
- fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries/IRN.geo.json')
-  .then(r=>{if(!r.ok)throw new Error('مرز ایران بارگذاری نشد');return r.json();})
-  .then(g=>{const border=L.geoJSON(g,{style:{color:'#1769aa',weight:3,fillColor:'#75aadb',fillOpacity:.08}}).addTo(map);if(!sources.length&&!results.length)map.fitBounds(border.getBounds(),{padding:[12,12]});})
-  .catch(()=>{document.getElementById('status').textContent='مرز نقشه بارگذاری نشد؛ اتصال اینترنت نقشه را بررسی کن.';});
- setTimeout(()=>map.invalidateSize(),500);
+const STORE='vt_news_map_sources_v1', RESULTS_STORE='vt_news_map_results_v1';
+let sources=[], results=[];
+const $=id=>document.getElementById(id);
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showStatus(message,kind='info'){ $('status').innerHTML='<div class="alert alert-'+kind+'">'+esc(message)+'</div>'; }
+function isUrl(v){const s=String(v||'').trim().toLowerCase();return s.startsWith('https://')||s.startsWith('http://');}
+function renderNews(){
+ $('newsCount').textContent=results.length;
+ $('news').innerHTML=results.length?results.map(n=>'<article class="news"><strong>'+esc(n.title)+'</strong><div class="muted">'+esc(n.province)+' / '+esc(n.county)+' · '+esc(n.source)+' · '+esc(n.date)+'</div><p>'+esc(n.text)+'</p><a href="'+esc(n.url)+'" target="_blank" rel="noopener">باز کردن خبر اصلی</a></article>').join(''):'هنوز خبری پیدا نشده است.';
 }
+function drawMap(){
+ const W=600,H=470;
+ // نقشه شماتیک ایران؛ بدون نیاز به بارگذاری کتابخانه یا نقشه خارجی
+ const outline='70,90 115,55 170,62 205,35 260,55 300,40 350,75 405,85 430,125 480,145 465,190 505,225 470,270 445,315 400,330 370,385 325,405 285,380 245,400 205,370 165,360 140,320 105,300 90,255 55,220 75,175 50,135';
+ const pin=(lat,lon,color,label)=>{const x=55+((lon-44)/20)*450,y=420-((lat-24)/16)*370;return '<circle cx="'+x+'" cy="'+y+'" r="7" fill="'+color+'" stroke="white" stroke-width="2"><title>'+esc(label)+'</title></circle>';};
+ let pins='';
+ sources.forEach(s=>{const lat=Number(s['عرض']),lon=Number(s['طول']);if(Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=24&&lat<=40&&lon>=44&&lon<=64)pins+=pin(lat,lon,'#1674c8',(s['استان']||'')+' '+(s['شهرستان']||''));});
+ results.forEach(n=>{const lat=Number(n.lat),lon=Number(n.lon);if(Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=24&&lat<=40&&lon>=44&&lon<=64)pins+=pin(lat,lon,'#df3545',n.title||'خبر');});
+ $('map').innerHTML='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="نقشه شماتیک ایران" style="width:100%;height:100%;background:#eaf2f8;border-radius:12px"><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#d5e1e9" stroke-width="1"/></pattern></defs><rect width="600" height="470" fill="url(#grid)"/><polygon points="'+outline+'" fill="#dcebdc" stroke="#477b59" stroke-width="5" stroke-linejoin="round"/>'+pins+'<text x="300" y="450" text-anchor="middle" font-size="14" fill="#40576b">نمای شماتیک ایران · موقعیت‌ها تقریبی هستند</text></svg>';
+}
+function showSaved(){
+ try{sources=JSON.parse(localStorage.getItem(STORE)||'[]');results=JSON.parse(localStorage.getItem(RESULTS_STORE)||'[]');}catch(e){sources=[];results=[];}
+ $('sourceCount').textContent=sources.length;
+ $('savedInfo').textContent=sources.length?'فهرست '+sources.length+' ردیف روی این گوشی ذخیره است.':'فهرست هنوز ذخیره نشده است.';
+ renderNews();drawMap();
+}
+$('saveExcel').addEventListener('click',async()=>{
+ const file=$('excel').files[0];
+ if(!file){showStatus('ابتدا فایل اکسل را انتخاب کن.','warning');return;}
+ if(!window.XLSX){showStatus('ابزار خواندن اکسل بارگذاری نشده؛ صفحه را با اینترنت باز کن و دوباره امتحان کن.','danger');return;}
+ const btn=$('saveExcel');btn.disabled=true;btn.textContent='در حال خواندن اکسل...';
+ try{
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+  const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+  const norm=k=>String(k).trim().toLowerCase().replace(/[\s_-]/g,'');
+  const aliases={'province':'استان','استان':'استان','county':'شهرستان','city':'شهرستان','شهرستان':'شهرستان','latitude':'عرض','lat':'عرض','عرض':'عرض','عرضجغرافیایی':'عرض','longitude':'طول','lon':'طول','lng':'طول','طول':'طول','طولجغرافیایی':'طول','rss':'rss_url','rssurl':'rss_url','feed':'rss_url','telegram':'telegram_url','telegramurl':'telegram_url'};
+  sources=raw.map(row=>{const o={};Object.keys(row).forEach(k=>o[aliases[norm(k)]||String(k).trim()]=row[k]);const lat=Number(o['عرض']),lon=Number(o['طول']);const validCoords=Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=24&&lat<=40&&lon>=44&&lon<=64;const rss=String(o.rss_url||'').trim(),telegram=String(o.telegram_url||'').trim();return {'استان':String(o['استان']||''),'شهرستان':String(o['شهرستان']||''),'عرض':validCoords?lat:null,'طول':validCoords?lon:null,'rss_url':rss,'telegram_url':telegram};}).filter(s=>s['عرض']!==null||isUrl(s.rss_url)||isUrl(s.telegram_url));
+  if(!sources.length)throw new Error('هیچ لینک معتبر یا مختصات معتبری در فایل پیدا نشد. ستون‌های اکسل را بررسی کن.');
+  localStorage.setItem(STORE,JSON.stringify(sources));showSaved();
+  showStatus('اکسل با موفقیت ذخیره شد: '+sources.length+' ردیف. برای جستجو دیگر لازم نیست دوباره فایل را انتخاب کنی.','success');
+ }catch(e){showStatus('ذخیره اکسل انجام نشد: '+e.message,'danger');}
+ finally{btn.disabled=false;btn.textContent='ذخیره اکسل روی این گوشی';}
+});
+$('searchBtn').addEventListener('click',async()=>{
+ if(!sources.length){showSaved();if(!sources.length){showStatus('ابتدا فایل اکسل را انتخاب و ذخیره کن.','warning');return;}}
+ const btn=$('searchBtn');btn.disabled=true;btn.textContent='در حال بررسی منابع...';
+ showStatus('درخواست جستجو ارسال شد؛ دریافت هر منبع ممکن است چند ثانیه طول بکشد.','info');
+ $('sourceStatus').textContent='در حال بررسی لینک‌ها...';
+ const controller=typeof AbortController!=='undefined'?new AbortController():null;
+ const timer=controller?setTimeout(()=>controller.abort(),180000):null;
+ try{
+  const response=await fetch('/search',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources,keywords:$('keywords').value}),signal:controller?controller.signal:undefined});
+  let data={};try{data=await response.json();}catch(e){}
+  if(response.status===401){throw new Error('نشست ورود تمام شده است. یک بار از حساب خارج و دوباره وارد شو.');}
+  if(!response.ok||!data.ok)throw new Error(data.error||('خطای سرور: '+response.status));
+  results=data.results||[];localStorage.setItem(RESULTS_STORE,JSON.stringify(results));renderNews();drawMap();
+  $('sourceStatus').innerHTML=(data.statuses||[]).map(s=>'<div class="border-bottom py-2"><b>'+esc(s.place)+' · '+esc(s.kind)+'</b> — '+esc(s.message)+' (خبر مطابق کلیدواژه: '+s.count+')<br><small>'+esc(s.url)+'</small></div>').join('')||'در اکسل لینک RSS یا تلگرام ثبت نشده است.';
+  showStatus('بررسی '+data.source_count+' ردیف تمام شد؛ '+results.length+' خبر مطابق کلمات کلیدی پیدا شد.','success');
+ }catch(e){showStatus(e.name==='AbortError'?'زمان انتظار جستجو تمام شد. تعداد منابع را کمتر کن و دوباره امتحان کن.':e.message,'danger');}
+ finally{if(timer)clearTimeout(timer);btn.disabled=false;btn.textContent='جستجو در منابع ذخیره‌شده';}
+});
+$('copyBtn').addEventListener('click',async()=>{
+ const text=results.map(n=>n.title+'\n'+n.province+' / '+n.county+'\n'+n.text+'\n'+n.url).join('\n\n---\n\n');
+ if(!text){showStatus('هنوز خبری برای کپی وجود ندارد.','warning');return;}
+ try{await navigator.clipboard.writeText(text);showStatus('همه خبرها کپی شدند.','success');}catch(e){showStatus('مرورگر اجازه کپی خودکار نداد؛ صفحه را در مرورگر اصلی باز کن.','warning');}
+});
 showSaved();
-</script></body></html>
+</script></body></html></body></html>
