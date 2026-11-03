@@ -53,12 +53,23 @@ $('saveExcel').addEventListener('click',async()=>{
   const aliases={
    'province':'استان','استان':'استان','ناماستان':'استان',
    'county':'شهرستان','city':'شهرستان','شهرستان':'شهرستان','شهر':'شهرستان','نامشهر':'شهرستان',
-   'latitude':'عرض','lat':'عرض','عرض':'عرض','عرضجغرافیایی':'عرض',
-   'longitude':'طول','lon':'طول','lng':'طول','طول':'طول','طولجغرافیایی':'طول',
+   'latitude':'عرض','lat':'عرض','عرض':'عرض','عرضجغرافیایی':'عرض','عرضجغرافیاییدرجه':'عرض','عرضدرجه':'عرض',
+   'longitude':'طول','lon':'طول','lng':'طول','طول':'طول','طولجغرافیایی':'طول','طولجغرافیاییدرجه':'طول','طولدرجه':'طول',
    'rss':'rss_url','rssurl':'rss_url','feed':'rss_url','website':'rss_url','site':'rss_url','siteurl':'rss_url','sourceurl':'rss_url',
-   'لینکسایت':'rss_url','آدرسسایت':'rss_url','وبسایت':'rss_url','وبسایت':'rss_url','سایت':'rss_url','لینکخبرگزاری':'rss_url',
+   'لینکسایت':'rss_url','آدرسسایت':'rss_url','وبسایت':'rss_url','سایت':'rss_url','لینکخبرگزاری':'rss_url','لینکمنبع':'rss_url','آدرسمنبع':'rss_url',
    'telegram':'telegram_url','telegramurl':'telegram_url','telegramlink':'telegram_url','channel':'telegram_url','channelurl':'telegram_url',
-   'لینکتلگرام':'telegram_url','آدرستلگرام':'telegram_url','کانالتلگرام':'telegram_url','تلگرام':'telegram_url'
+   'لینکتلگرام':'telegram_url','آدرستلگرام':'telegram_url','کانالتلگرام':'telegram_url','تلگرام':'telegram_url','لینککانالتلگرام':'telegram_url','آدرسکانالتلگرام':'telegram_url'
+  };
+  const classifyHeader=k=>{
+   const n=norm(k);
+   if(aliases[n])return aliases[n];
+   if(n.includes('telegram')||n.includes('تلگرام'))return 'telegram_url';
+   if(n.includes('latitude')||n==='lat'||n.includes('عرضجغرافیایی')||n==='عرض')return 'عرض';
+   if(n.includes('longitude')||n==='lon'||n==='lng'||n.includes('طولجغرافیایی')||n==='طول')return 'طول';
+   if(n.includes('province')||n.includes('استان'))return 'استان';
+   if(n.includes('county')||n.includes('city')||n.includes('شهرستان')||n==='شهر')return 'شهرستان';
+   if(n.includes('rss')||n.includes('website')||n.includes('site')||n.includes('لینک')||n.includes('آدرس')||n.includes('وبسایت')||n.includes('سایت'))return 'rss_url';
+   return '';
   };
   const normalizeUrl=v=>{
    let s=String(v??'').trim();
@@ -70,7 +81,7 @@ $('saveExcel').addEventListener('click',async()=>{
   };
   const latinDigits=v=>String(v??'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[٫،٬]/g,'.').replace(/,/g,'').trim();
   const num=v=>{const n=Number(latinDigits(v));return Number.isFinite(n)?n:null;};
-  sources=raw.map(row=>{const o={};Object.keys(row).forEach(k=>{const key=norm(k),target=aliases[key]||String(k).trim();const value=row[k];if(o[target]===undefined||(!String(o[target]??'').trim()&&String(value??'').trim()))o[target]=value;});const lat=num(o['عرض']),lon=num(o['طول']);const validCoords=lat!==null&&lon!==null&&lat>=24&&lat<=40&&lon>=44&&lon<=64;const rss=normalizeUrl(o.rss_url),telegram=normalizeUrl(o.telegram_url);return {'استان':String(o['استان']||''),'شهرستان':String(o['شهرستان']||''),'عرض':validCoords?lat:null,'طول':validCoords?lon:null,'rss_url':rss,'telegram_url':telegram};}).filter(s=>s['عرض']!==null||!!s.rss_url||!!s.telegram_url);
+  sources=raw.map(row=>{const o={};Object.keys(row).forEach(k=>{const key=norm(k),target=classifyHeader(k)||String(k).trim();const value=row[k];if(o[target]===undefined||(!String(o[target]??'').trim()&&String(value??'').trim()))o[target]=value;});const lat=num(o['عرض']),lon=num(o['طول']);const validCoords=lat!==null&&lon!==null&&lat>=24&&lat<=40&&lon>=44&&lon<=64;const rss=normalizeUrl(o.rss_url),telegram=normalizeUrl(o.telegram_url);return {'استان':String(o['استان']||''),'شهرستان':String(o['شهرستان']||''),'عرض':validCoords?lat:null,'طول':validCoords?lon:null,'rss_url':rss,'telegram_url':telegram};}).filter(s=>s['عرض']!==null||!!s.rss_url||!!s.telegram_url);
   if(!sources.length)throw new Error('هیچ لینک معتبر یا مختصات معتبری در فایل پیدا نشد. ستون‌های اکسل را بررسی کن.');
   localStorage.setItem(STORE,JSON.stringify(sources));showSaved();
   showStatus('اکسل با موفقیت ذخیره شد: '+sources.length+' ردیف. برای جستجو دیگر لازم نیست دوباره فایل را انتخاب کنی.','success');
